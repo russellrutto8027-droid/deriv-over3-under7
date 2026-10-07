@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Deriv Over 3 / Under 7 Scanner</title>
+<style>
+body{margin:0;background:#0b1120;color:#eef2ff;font-family:Arial,sans-serif}.wrap{max-width:900px;margin:auto;padding:20px}
+h1{margin:0 0 7px}.sub{color:#9aa8c6;margin-bottom:20px}.card{background:#151e34;border:1px solid #2b3958;border-radius:16px;padding:18px;margin-bottom:14px}
+button{width:100%;padding:14px;border:0;border-radius:10px;background:#315ee8;color:white;font-size:16px;font-weight:800}button:disabled{opacity:.6}
+.result{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:16px}.box{background:#10182c;border:1px solid #344463;border-radius:13px;padding:18px;text-align:center}.green{background:#123525;border-color:#2d9563}
+.label{font-size:12px;color:#9aa8c6;text-transform:uppercase}.value{font-size:27px;font-weight:900;margin-top:9px}.conf{text-align:center;font-size:18px;font-weight:800;margin-top:14px}.status{text-align:center;color:#aebbd3;margin-top:12px}
+table{width:100%;border-collapse:collapse;margin-top:15px;font-size:13px}th,td{padding:9px;border-bottom:1px solid #293653;text-align:left}th{color:#9aa8c6}.note{font-size:12px;color:#b9c4da;line-height:1.6;margin-top:14px}
+@media(max-width:650px){.result{grid-template-columns:1fr}.value{font-size:24px}}
+</style></head><body><div class="wrap">
+<h1>Deriv Over 3 / Under 7 Scanner</h1><div class="sub">Press ANALYSE to scan volatility markets and rank the strongest setup.</div>
+<div class="card"><button id="go">ANALYSE ALL VOLATILITY</button><div class="status" id="status">Ready</div></div>
+<div class="card" id="result" style="display:none"><div class="result">
+<div class="box green"><div class="label">Volatility</div><div class="value" id="v">—</div></div>
+<div class="box green"><div class="label">Entry digit</div><div class="value" id="d">—</div></div>
+<div class="box green"><div class="label">Market</div><div class="value" id="m">—</div></div></div>
+<div class="conf" id="c">Confidence: —</div><div class="note" id="why"></div></div>
+<div class="card"><b>Scanned markets</b><table><thead><tr><th>Volatility</th><th>Signal</th><th>Probability</th><th>Confidence</th></tr></thead>
+<tbody id="rows"><tr><td colspan="4">No analysis yet.</td></tr></tbody></table></div>
+<div class="card note"><b>Signal rules:</b> Over 3 means final digit 4–9. Under 7 means final digit 0–6. The scanner compares recent digit frequencies and stability across several windows. Confidence is an analysis score, not a guarantee.</div>
+</div>
+<script>
+const markets=[["Volatility 10","R_10"],["Volatility 25","R_25"],["Volatility 50","R_50"],["Volatility 75","R_75"],["Volatility 100","R_100"],["Volatility 10 (1s)","1HZ10V"],["Volatility 25 (1s)","1HZ25V"],["Volatility 50 (1s)","1HZ50V"],["Volatility 75 (1s)","1HZ75V"],["Volatility 100 (1s)","1HZ100V"]];
+const $=x=>document.getElementById(x);
+function lastDigit(q,p){let n=Number(q);if(!Number.isFinite(n))return null;if(Number.isInteger(p)&&p>0)return Math.abs(Math.round(n*Math.pow(10,p)))%10;let m=String(q).replace(/\D/g,"").match(/(\d)$/);return m?Number(m[1]):null}
+function probability(a,f){return(a.filter(f).length+1)/(a.length+2)}
+function stability(a,f){let z=[];[25,50,100].forEach(n=>{let x=a.slice(-Math.min(n,a.length));if(x.length>=10)z.push(probability(x,f))});if(z.length<2)return 1;return Math.max(0,1-(Math.max(...z)-Math.min(...z))/.2)}
+function favourite(a,allow){let c={};allow.forEach(d=>c[d]=0);a.forEach(d=>{if(d in c)c[d]++});return allow.reduce((b,d)=>c[d]>c[b]?d:b,allow[0])}
+function score(p,base,s,n){return Math.min(1,.5*Math.min(1,Math.max(0,(p-base)/.05))+.3*s+.2*Math.min(1,n/150))}
+function ticks(symbol){return new Promise(resolve=>{let ws,timer=setTimeout(()=>{try{ws.close()}catch(e){}resolve([])},8000);try{ws=new WebSocket("wss://ws.derivws.com/websockets/v3?app_id=1089");ws.onopen=()=>ws.send(JSON.stringify({ticks_history:symbol,end:"latest",count:200,style:"ticks",req_id:1}));ws.onmessage=e=>{try{let x=JSON.parse(e.data);if(x.msg_type==="history"&&x.history&&x.history.prices){clearTimeout(timer);let a=x.history.prices.map(q=>lastDigit(q,x.history.pip_size)).filter(x=>x!==null);try{ws.close()}catch(e){}resolve(a)}}catch(e){}};ws.onerror=()=>{clearTimeout(timer);try{ws.close()}catch(e){}resolve([])}}catch(e){clearTimeout(timer);resolve([])}})}
+async function analyse(){$("go").disabled=true;$("status").textContent="Scanning all volatility markets…";$("result").style.display="none";let out=[];for(let i=0;i<markets.length;i++){$("status").textContent="Scanning "+markets[i][0]+" ("+(i+1)+"/"+markets.length+")…";let a=await ticks(markets[i][1]);if(a.length<20)continue;let po=probability(a,d=>d>=4),pu=probability(a,d=>d<=6),so=stability(a,d=>d>=4),su=stability(a,d=>d<=6),co=score(po,.60,so,a.length),cu=score(pu,.70,su,a.length),q=[];if(po>.64)q.push({s:"OVER 3",p:po,c:co,d:favourite(a,[4,5,6,7,8,9])});if(pu>.74)q.push({s:"UNDER 7",p:pu,c:cu,d:favourite(a,[0,1,2,3,4,5,6])});if(q.length){q.sort((a,b)=>b.c-a.c);out.push({v:markets[i][0],...q[0],n:a.length})}}
+out.sort((a,b)=>b.c-a.c);$("rows").innerHTML=out.length?out.map(x=>`<tr><td>${x.v}</td><td>${x.s}</td><td>${(x.p*100).toFixed(1)}%</td><td>${Math.round(x.c*100)}%</td></tr>`).join(""):"<tr><td colspan='4'>No sufficiently strong setup found — WAIT.</td></tr>";if(out.length){let b=out[0];$("v").textContent=b.v;$("d").textContent=b.d;$("m").textContent=b.s;$("c").textContent="Confidence: "+Math.round(b.c*100)+"%";$("why").textContent="Best-ranked setup from "+b.n+" recent ticks. Observed probability: "+(b.p*100).toFixed(1)+"%. Favoured entry digit: "+b.d+".";$("result").style.display="block";$("status").textContent="Analysis complete."}else $("status").textContent="Analysis complete — WAIT.";$("go").disabled=false}
+$("go").onclick=analyse;
+</script></body></html>
